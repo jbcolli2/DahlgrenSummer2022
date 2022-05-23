@@ -214,10 +214,11 @@ class Data:
         self.typeValue = typeValue
         self.cols = cols
 
+        self.scaler = pp.StandardScaler()
+
 
 
     def scaleData(self):
-        self.scaler = pp.StandardScaler()
         self.X = pd.DataFrame(data=self.scaler.fit_transform(self.X), columns=self.X.columns, index=self.X.index)
 
     def unscaleData(self):

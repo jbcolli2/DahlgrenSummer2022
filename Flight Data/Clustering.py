@@ -14,6 +14,10 @@ class hpDBSCAN:
     def __init__(self, eps = .5):
         self.eps = eps
 
+class hpMeanShift:
+    def __init__(self, bandwidth):
+        self.bandwidth = None
+
 
 
 class kMeans:
@@ -99,7 +103,7 @@ class kMeans:
                         ax[plotRow, plotCol].set_ylabel(cols[plotCol])
                         ax[plotRow, plotCol].ticklabel_format(scilimits=(0,0))
 
-        plt.suptitle(description)
+        plt.suptitle(plotDescription)
         fig.show()
 
 
@@ -200,7 +204,7 @@ class dbscan:
 
         handles, labels = ax.flatten()[1].get_legend_handles_labels()
         fig.legend(handles, labels, loc='upper left')
-        plt.suptitle(description)
+        plt.suptitle(plotDescription)
         fig.show()
 
 
@@ -297,5 +301,77 @@ class gaussian:
 
         handles, labels = ax.flatten()[1].get_legend_handles_labels()
         fig.legend(handles, labels, loc='upper left')
-        plt.suptitle(description)
+        plt.suptitle(plotDescription)
+        fig.show()
+
+from sklearn.cluster import MeanShift, estimate_bandwidth
+class meanShift:
+    def __init__(self, quantile=0.5):
+        self.batch_n = None
+        self.quantile = quantile
+
+        # Hyperparameters for kmeans
+        self.hyper = hpMeanShift(None)
+
+    # Run kmeans for many different cluster numbers and display the inertia and sil_score for each
+    #   number of clusters.  This will be plotted to determine the correct number of clusters to use
+    def displayMetrics(self, X, description="Unknown Data"):
+        return
+
+    # Obtain the number of hyperparameters to use from the user
+    def setHyperParameters(self, bandwidth: float):
+        self.hyper.bandwidth = bandwidth
+
+    def askHyperParameters(self):
+        return
+
+    # Actually cluster the data and store the clusters in a list of DataFrames called `clusters`
+    def clusterData(self, X: pd.DataFrame, description="Unknown Data"):
+        self.hyper.bandwidth = estimate_bandwidth(X, quantile=self.quantile, n_samples=self.batch_n)
+        self.ms = MeanShift(bandwidth=self.hyper.bandwidth)
+        self.ms.fit(X)
+
+        unique, counts = np.unique(self.ms.labels_, return_counts=True)
+        self.clusterCount = dict(zip(unique, counts))
+        print('Cluster counts for bandwidth = {}: {}'.format(self.hyper.bandwidth, self.clusterCount))
+
+        self.predClusterLabels = pd.DataFrame(self.ms.labels_, index=X.index, columns=['cluster'])
+
+        # Create a list of DataFrames containing all the clusters of the data
+        self.clusters = dict()
+        for clusterIdx in unique:
+            self.clusters[clusterIdx] = X.loc[self.predClusterLabels.cluster == clusterIdx]
+
+
+
+
+
+    # Plot the clusters in 2D scatter plot
+    def plotClusters(self, cols=None, description=None):
+        if cols == None:
+            cols = self.clusters[0].columns
+
+        if len(cols) > 6:
+            cols = cols[:6]
+
+        plotDescription = 'MeanShift with bandwidth = ' + str(self.hyper.bandwidth) + '\n' + description
+
+        numPlotCols = int(np.ceil(np.sqrt(len(cols))))
+        fig, ax = plt.subplots(len(cols), len(cols), figsize=(30, 30))
+        fig.set_size_inches(18, 18)
+        plt.subplots_adjust(wspace=0.5, hspace=0.5)
+        cmap = plt.cm.get_cmap('hsv', len(self.clusters))
+        for plotRow in range(len(cols)):
+            for plotCol in range(len(cols)):
+                if (plotRow != plotCol):
+                    for key, cluster in self.clusters.items():
+                        ax[plotRow, plotCol].scatter(cluster[cols[plotRow]], cluster[cols[plotCol]],
+                                                     cmap=cmap, s=5, label='C ' + str(key))
+                        ax[plotRow, plotCol].set_xlabel(cols[plotRow])
+                        ax[plotRow, plotCol].set_ylabel(cols[plotCol])
+                        ax[plotRow, plotCol].ticklabel_format(scilimits=(0, 0))
+
+        handles, labels = ax.flatten()[1].get_legend_handles_labels()
+        fig.legend(handles, labels, loc='upper left')
+        plt.suptitle(plotDescription)
         fig.show()

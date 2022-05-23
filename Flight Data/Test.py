@@ -19,7 +19,7 @@ import Clustering as cl
 
 
 #%%
-dataDir = './Blake Files/baserollout_and_10MCs/'
+dataDir = './data/Blake Files/baserollout_and_10MCs/'
 
 data = Util.MCTSData(dataDir)
 
@@ -40,6 +40,7 @@ data = Util.MCTSData(dataDir)
 # %% DBSCAN clustering
 layer = data.getRolloutLayers(5, Util.xg_cols)
 layer = data.getRolloutLayers(5, Util.xg_cols + Util.x_cols)
+layer = data.getMCTSLayers(3,3, Util.xg_cols)
 
 # layer = data.getMCTSLayers(5, 3, Util.xg_cols + Util.x_cols)
 layer.scaleData()
@@ -54,15 +55,15 @@ dbscan.clusterData(layer.X, layer.getDescription())
 dbscan.plotClusters(description=layer.getDescription())
 
 
-# %% Gaussian Mixture
-layer = data.getRolloutLayers(5, Util.xg_cols + Util.x_cols)
+# %% Mean Shift
+layer = data.getMCTSLayers(3,3, Util.xg_cols)
 layer.scaleData()
 
-gauss = cl.gaussian()
-gauss.displayMetrics(layer.X, list(range(2,12)), layer.getDescription())
-gauss.askHyperParameters()
-gauss.clusterData(layer.X)
-gauss.plotClusters(description=layer.getDescription())
+ms = cl.meanShift(quantile=0.3)
+ms.displayMetrics(layer.X, layer.getDescription())
+ms.askHyperParameters()
+ms.clusterData(layer.X)
+ms.plotClusters(description=layer.getDescription())
 
 
 
