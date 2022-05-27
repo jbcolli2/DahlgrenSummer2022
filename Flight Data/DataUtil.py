@@ -268,71 +268,96 @@ class Data:
 
     # Compute nodal value of all nodes in a layer.  Average all in-flight probs, then
     #   multiply with terminal prob.
-    # TODO: Implement for the branching tree format
-    # TODO: Implement this for when Data is a path
+
     # TODO: Currently using single $omega$ for all constraints, should instead
     #   Use different omega for each constraint
-    def computeValuesInLayer(self, omega):
-        if(self.type != DataType.LAYER):
-            print('!!!ERROR: Ran computeValuesInLayer on a dataset that is not LAYERS!!!')
-            return
+def computeValuesForTree(X, omega, japFormat = True):
+    '''
+    :brief: For the data X, computes the nodal value and the associated terminal probability.
+        Does this by traversing layer-by-layer.  In each layer the value of all nodes are calculated.
+        If tree is in Japan-format, then layers below 1st are computed by simply subtracting
+        the current in-flight prob from the value of the node above in the path
 
-        self.values = pd.DataFrame(data=[], columns=['value', 'termValue'], index=self.X.index)
+    :param X: Full data from a single file. Contains all the nodes in the tree in path format
+    :param omega: Constant value to be used for all constraints, in-flight and terminal
+    :param japFormat: Is the tree stored in Japanese format or branching format
 
-        distinctNodeIDs = np.unique(self.Xall.loc[self.X.index, 'uniqueID'].values)
-
-        for id in distinctNodeIDs:
-            allPathsForID = self.X.loc[self.Xall.uniqueID == id]
-
-            valueOfID = 0
-            for nodeIdx in allPathsForID.index:
-                valueOfID += self.computeValueForPath(nodeIdx, omega)
-
-            valueOfID = valueOfID/len(allPathsForID)
-            self.values.loc[allPathsForID.index, 'value'] = valueOfID
-            # TODO: Store terminal value.  Either average or somehow all terminal values
+    :return: DataFrame with values and termValues columns added to X
+    '''
 
 
+    # self.values = pd.DataFrame(data=[], columns=['value', 'termValue'], index=self.X.index)
+
+    # TODO: Store terminal value.  Either average or somehow all terminal values
+    if(japFormat == False or japFormat == True):
+        # Loop through all layers
+        numLayers = max(X.index)[1]
+
+        for layer in range(1,numLayers+1):
+            idx = pd.IndexSlice
+            Y = X.loc[idx[:,layer]]  #Y is all rows in a particular layer
+
+            distinctNodeIDs = np.unique(Y.loc[Y.index, 'uniqueID'].values)
+
+            for id in distinctNodeIDs:
+                allPathsForID = Y.loc[Y.uniqueID == id]
+
+                valueOfID = 0
+                for nodeIdx in allPathsForID.index:
+                    valueOfID += computeValueForPath(Y, nodeIdx, omega)
+
+                valueOfID = valueOfID/len(allPathsForID)
+                X.loc[allPathsForID.index, 'nodeValue'] = valueOfID
+
+    else:
+        idx = pd.IndexSlice
+        Y = X.loc[idx[:,1]]  # Y is all nodes on layer 1.  Should just be one row
 
 
 
 
-    def computeValueForPath(self, nodeIdx, omega):
-        path = nodeIdx[0]
-        layer = nodeIdx[1]
-        termLayer = max(self.Xall.loc[path, :].index)
-        nodeValue = 0
-
-        for futureLayer in range(layer + 1, termLayer + 1):
-            nodeValue += self.__computeFlightProb(self.Xall.loc[(path, futureLayer), :], omega)
-        if (nodeValue != 0):
-            nodeValue = nodeValue / (termLayer - layer)
-        else:
-            nodeValue = 1  # if there are no future nodes, just want the terminal probability
-
-        termValue = self.__computeTermProb(self.Xall.loc[(path, termLayer), :], omega)
-        nodeValue *= termValue
-
-        return nodeValue
 
 
-    # Method to compute probability using in-flight constraints.  Passed in single node data
-    def __computeFlightProb(self, X, omega):
-        prob = 1
-        constCols = ['c_1', 'c_2', 'c_3', 'c_4', 'c_5']
-        for constraint in constCols:
-            prob *= np.exp(-.5*(max(0, X[constraint])/omega)**2)
 
-        return prob
 
-    # Method to compute probability using terminal constraints.  Passed in a single node data
-    def __computeTermProb(self, X, omega):
-        prob = 1
-        constCols = ['cf_1', 'cf_2', 'cf_3', 'cf_4', 'cf_5', 'cf_6']
-        for constraint in constCols:
-            prob *= np.exp(-.5 * (max(0, X[constraint]) / omega) ** 2)
 
-        return prob
+def computeValueForPath(self, X, nodeIdx, omega):
+    path = nodeIdx[0]
+    layer = nodeIdx[1]
+    termLayer = max(X.loc[path, :].index)
+    nodeValue = 0
+
+    for futureLayer in range(layer + 1, termLayer + 1):
+        nodeValue += self.__computeFlightProb(X.loc[(path, futureLayer), :], omega)
+
+    if (nodeValue != 0):
+        nodeValue = nodeValue / (termLayer - layer)
+    else:
+        nodeValue = 1  # if there are no future nodes, just want the terminal probability
+
+    termValue = self.__computeTermProb(X.loc[(path, termLayer), :], omega)
+    nodeValue *= termValue
+
+    return nodeValue
+
+
+# Method to compute probability using in-flight constraints.  Passed in single node data
+def __computeFlightProb(self, X, omega):
+    prob = 1
+    constCols = ['c_1', 'c_2', 'c_3', 'c_4', 'c_5']
+    for constraint in constCols:
+        prob *= np.exp(-.5*(max(0, X[constraint])/omega)**2)
+
+    return prob
+
+# Method to compute probability using terminal constraints.  Passed in a single node data
+def __computeTermProb(self, X, omega):
+    prob = 1
+    constCols = ['cf_1', 'cf_2', 'cf_3', 'cf_4', 'cf_5', 'cf_6']
+    for constraint in constCols:
+        prob *= np.exp(-.5 * (max(0, X[constraint]) / omega) ** 2)
+
+    return prob
 
 
 
