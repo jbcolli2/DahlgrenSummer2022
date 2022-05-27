@@ -4,7 +4,7 @@ from sklearn.cluster import DBSCAN
 import pandas as pd
 import numpy as np
 
-import Util
+import DataUtil
 
 class hpKMeans:
     def __init__(self, n_clusters = 2):
@@ -372,6 +372,6 @@ class meanShift:
                         ax[plotRow, plotCol].ticklabel_format(scilimits=(0, 0))
 
         handles, labels = ax.flatten()[1].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper left')
-        plt.suptitle(plotDescription)
+        fig.legend(handles, labels, loc='upper left', fontsize=20)
+        plt.suptitle(plotDescription, fontsize=20)
         fig.show()

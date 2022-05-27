@@ -11,7 +11,7 @@ import sklearn.preprocessing as pp
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
-import Util
+import DataUtil
 import Clustering as cl
 
 
@@ -21,11 +21,11 @@ import Clustering as cl
 #%%
 dataDir = './data/Blake Files/baserollout_and_10MCs/'
 
-data = Util.MCTSData(dataDir)
+data =DataUtil.MCTSData(dataDir)
 
 # %%  KMeans clustering
-# layer = data.getRolloutLayers(5, Util.xg_cols)
-# layer = data.getMCTSLayers(10, 2, Util.xg_cols + Util.x_cols)
+# layer = data.getRolloutLayers(5, DataUtil.xg_cols)
+# layer = data.getMCTSLayers(10, 2, DataUtil.xg_cols + DataUtil.x_cols)
 # layer.scaleData()
 #
 # kMeans = cl.kMeans()
@@ -38,11 +38,10 @@ data = Util.MCTSData(dataDir)
 # kMeans.plotClusters(description=layer.getDescription())
 
 # %% DBSCAN clustering
-layer = data.getRolloutLayers(5, Util.xg_cols)
-layer = data.getRolloutLayers(5, Util.xg_cols + Util.x_cols)
-layer = data.getMCTSLayers(3,3, Util.xg_cols)
+layer = data.getRolloutLayers(5, DataUtil.xg_cols)
 
-# layer = data.getMCTSLayers(5, 3, Util.xg_cols + Util.x_cols)
+
+# layer = data.getMCTSLayers(6, 4, DataUtil.xg_cols + DataUtil.x_cols)
 layer.scaleData()
 
 dbscan = cl.dbscan()
@@ -54,9 +53,26 @@ dbscan.clusterData(layer.X, layer.getDescription())
 
 dbscan.plotClusters(description=layer.getDescription())
 
+layer.computeValuesInLayer(5e4)
+
+clustVals = dict()
+for key, clust in dbscan.clusters.items():
+    clustVals[key] = layer.values.loc[clust.index,'value']
+    print('\n-------------------Cluster {}--------------------------'.format(key))
+    print('Mean = {}'.format(np.mean(clustVals[key])))
+    print('Median = {}'.format(np.median(clustVals[key])))
+    print('Std = {}'.format(np.std(clustVals[key])))
+
+
+# for values in clustVals:
+#     v = values.values.flatten()
+#     plt.hist(v, range=(0,1), bins=20, density=True)
+#     print('Mean of ')
+
+plt.show()
 
 # %% Mean Shift
-layer = data.getMCTSLayers(3,3, Util.xg_cols)
+layer = data.getMCTSLayers(3,3, DataUtil.xg_cols)
 layer.scaleData()
 
 ms = cl.meanShift(quantile=0.3)
@@ -64,6 +80,12 @@ ms.displayMetrics(layer.X, layer.getDescription())
 ms.askHyperParameters()
 ms.clusterData(layer.X)
 ms.plotClusters(description=layer.getDescription())
+layer.computeValuesInLayer(1e5)
 
+val = layer.values['value'].values.flatten()
+valf = layer.values['termValue'].values.flatten()
+plt.plot(val)
+plt.plot(valf,'r')
+plt.show()
 
 

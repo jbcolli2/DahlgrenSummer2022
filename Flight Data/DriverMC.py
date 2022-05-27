@@ -11,7 +11,7 @@ import sklearn.preprocessing as pp
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
-import Util
+import DataUtil
 
 # import importlib
 # importlib.reload(Util)

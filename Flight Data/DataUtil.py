@@ -15,6 +15,18 @@ u_cols = ['u0_1', 'u0_2']
 c_cols = ['c_1', 'c_2', 'c_3', 'c_4', 'c_5']
 cf_cols = ['cf_1', 'cf_2', 'cf_3', 'cf_4', 'cf_5', 'cf_6']
 
+
+'''
+    Computes the multiplier used to calculate the unique ID in the path format of the data
+'''
+def computeUniqueIDMult(X: pd.DataFrame):
+    return 10**np.ceil(np.log10(len(X)))
+
+
+def computeUniqueID(row, IDMult):
+    return row.layer * IDMult + row.id
+
+
 '''
     Holds all data within a directory.  Has access methods to obtain either a set of layers or paths
         from one particular file, either a rollout or iteration file.
@@ -76,14 +88,21 @@ class MCTSTree:
         self.original_data = pd.read_csv(mcts_filename)
         self.original_data = self.original_data.dropna(how='all', subset=['layer'])
 
+
+        # Add unique ID to data
+        self.uniqueIDMult = computeUniqueIDMult(self.original_data)
+        self.original_data['uniqueID'] = self.original_data.apply(lambda row : computeUniqueID(row, self.uniqueIDMult), axis=1)
+
         self.data = self.original_data.drop(columns=['layer', 'id', 'parent'])
         ind = pd.MultiIndex.from_tuples([], names=['path', 'layer'])
         self.paths = pd.DataFrame(data=[], columns=self.data.columns, index=ind)
 
         roots = self.original_data.loc[self.original_data.parent == 0]
         if(len(roots) == 1):  # Only one root means it is a US tree structure
+            self.japanTree = False
             self.computePaths()
         else:  # We have the tree in Japanese format
+            self.japanTree = True
             japMultiIdx = pd.MultiIndex.from_arrays([self.original_data.id.values, self.original_data.layer.values],
                                                     names=['path','layer'])
             self.paths = pd.DataFrame(data=self.original_data.values, columns=self.original_data.columns,
@@ -102,28 +121,29 @@ class MCTSTree:
     # Return all nodes from a particular layer or set of layers
     def getLayers(self, layers, cols = slice(None)):
         idx = pd.IndexSlice
-        return Data(self.paths.loc[idx[:, layers], cols], self.paths, self.filename, DataType.LAYER, layers, cols)
+        return Data(self.paths.loc[idx[:, layers], cols], self.paths, self.filename, self.japanTree, DataType.LAYER, layers, cols)
         # return self.data.loc[self.original_data.layer == layer, cols]
 
     # Return a collection of full paths with certain columns
     def getPaths(self, paths, cols = slice(None)):
-        return Data(self.paths.loc[paths, cols], self.paths, self.filename, DataType.PATH, paths, cols)
+        return Data(self.paths.loc[paths, cols], self.paths, self.filename, self.japanTree, DataType.PATH, paths, cols)
 
     # Return all the data, from certain columns
     def getData(self, cols = slice(None)):
-        return Data(self.paths[cols], self.paths, self.filename, DataType.ALL, None, cols)
+        return Data(self.paths[cols], self.paths, self.filename, self.japanTree, DataType.ALL, None, cols)
 
 
     # Get paths from the data
     def computePaths(self):
         root = self.original_data.loc[0,:]
-        path = pd.DataFrame(data=[], columns=self.data.columns, index=self.paths.index)
+        path = pd.DataFrame(data=[], columns=list(self.data.columns), index=self.paths.index)
         self.pathCounter = 0
         self.getChild(path, root)
 
 
     def getChild(self, path, root):
-        path.loc[(self.pathCounter, root.layer),:] = root
+        path.loc[(int(self.pathCounter), int(root.layer)),:] = root
+        root_idx = self.original_data[(self.original_data.parent == root.id) & (self.original_data.layer == (root.layer+1))].index
 
         child_idx = self.original_data[(self.original_data.parent == root.id) & (self.original_data.layer == (root.layer+1))].index
 
@@ -154,14 +174,19 @@ class Rollout:
         self.original_data = pd.read_csv(rollout_filename)
         self.original_data = self.original_data.dropna(how='all')
         self.data = self.original_data.reset_index()
+        self.original_data = self.data
+        self.original_data.rename(columns={'index': 'uniqueID'}, inplace=True)
 
-        # Refomat into paths
+
+
+
+        # Reformat into paths
         multiIdx = pd.MultiIndex.from_product([np.arange(1, int(self.data.shape[0] / 5) + 1, 1), [1, 2, 3, 4, 5]],
                                               names=['path', 'layer'])
         self.data = pd.DataFrame(data=self.data.values, index=multiIdx, columns=self.data.columns)
-        self.dataIndex = pd.Series(data=self.data['index'], index=multiIdx)
+        self.dataIndex = pd.Series(data=self.data['uniqueID'], index=multiIdx)
 
-        self.data = self.data.drop(columns=['index'])
+        self.japanTree = True
 
     '''
         Access the data
@@ -170,16 +195,16 @@ class Rollout:
     # Get a bunch of paths with all layers
     def getPaths(self, paths, cols=slice(None)):
         idx = pd.IndexSlice
-        return Data(self.data.loc[idx[paths, cols]], self.data, self.filename, DataType.PATH, paths, cols)
+        return Data(self.data.loc[idx[paths, cols]], self.data, self.filename, self.japanTree, DataType.PATH, paths, cols)
 
     # Get all nodes from some layers
     def getLayers(self, layers, cols=slice(None)):
         idx = pd.IndexSlice
-        return Data(self.data.loc[idx[:, layers], cols], self.data, self.filename, DataType.LAYER, layers, cols)
+        return Data(self.data.loc[idx[:, layers], cols], self.data, self.filename, self.japanTree, DataType.LAYER, layers, cols)
 
     # Get full data set
     def getData(self, cols=slice(None)):
-        return Data(self.data[cols], self.data, self.filename, DataType.ALL, None, cols)
+        return Data(self.data[cols], self.data, self.filename, self.japanTree, DataType.ALL, None, cols)
 
 
 '''
@@ -202,10 +227,11 @@ class DataType(Enum):
 
 
 class Data:
-    def __init__(self, X, Xall, filename, type = None, typeValue = None, cols = None):
+    def __init__(self, X, Xall, filename, japanTree, type = None, typeValue = None, cols = None):
         self.X = X
         self.Xall = Xall
         self.filename = filename
+        self.japanTree = japanTree
         if(type == None):
             self.type = DataType.OTHER
         else:
@@ -238,6 +264,76 @@ class Data:
             sCols = str(self.cols)
 
         return self.filename + '  |  ' + str(sType) + ' ' + sValue +'\n' + sCols
+
+
+    # Compute nodal value of all nodes in a layer.  Average all in-flight probs, then
+    #   multiply with terminal prob.
+    # TODO: Implement for the branching tree format
+    # TODO: Implement this for when Data is a path
+    # TODO: Currently using single $omega$ for all constraints, should instead
+    #   Use different omega for each constraint
+    def computeValuesInLayer(self, omega):
+        if(self.type != DataType.LAYER):
+            print('!!!ERROR: Ran computeValuesInLayer on a dataset that is not LAYERS!!!')
+            return
+
+        self.values = pd.DataFrame(data=[], columns=['value', 'termValue'], index=self.X.index)
+
+        distinctNodeIDs = np.unique(self.Xall.loc[self.X.index, 'uniqueID'].values)
+
+        for id in distinctNodeIDs:
+            allPathsForID = self.X.loc[self.Xall.uniqueID == id]
+
+            valueOfID = 0
+            for nodeIdx in allPathsForID.index:
+                valueOfID += self.computeValueForPath(nodeIdx, omega)
+
+            valueOfID = valueOfID/len(allPathsForID)
+            self.values.loc[allPathsForID.index, 'value'] = valueOfID
+            # TODO: Store terminal value.  Either average or somehow all terminal values
+
+
+
+
+
+
+    def computeValueForPath(self, nodeIdx, omega):
+        path = nodeIdx[0]
+        layer = nodeIdx[1]
+        termLayer = max(self.Xall.loc[path, :].index)
+        nodeValue = 0
+
+        for futureLayer in range(layer + 1, termLayer + 1):
+            nodeValue += self.__computeFlightProb(self.Xall.loc[(path, futureLayer), :], omega)
+        if (nodeValue != 0):
+            nodeValue = nodeValue / (termLayer - layer)
+        else:
+            nodeValue = 1  # if there are no future nodes, just want the terminal probability
+
+        termValue = self.__computeTermProb(self.Xall.loc[(path, termLayer), :], omega)
+        nodeValue *= termValue
+
+        return nodeValue
+
+
+    # Method to compute probability using in-flight constraints.  Passed in single node data
+    def __computeFlightProb(self, X, omega):
+        prob = 1
+        constCols = ['c_1', 'c_2', 'c_3', 'c_4', 'c_5']
+        for constraint in constCols:
+            prob *= np.exp(-.5*(max(0, X[constraint])/omega)**2)
+
+        return prob
+
+    # Method to compute probability using terminal constraints.  Passed in a single node data
+    def __computeTermProb(self, X, omega):
+        prob = 1
+        constCols = ['cf_1', 'cf_2', 'cf_3', 'cf_4', 'cf_5', 'cf_6']
+        for constraint in constCols:
+            prob *= np.exp(-.5 * (max(0, X[constraint]) / omega) ** 2)
+
+        return prob
+
 
 
 
