@@ -24,21 +24,31 @@ dataDir = './data/Blake Files/baserollout_and_10MCs/'
 data =DataUtil.MCTSData(dataDir)
 
 # %%  KMeans clustering
-# layer = data.getRolloutLayers(5, DataUtil.xg_cols)
+layer = data.getRolloutLayers(2, DataUtil.xg_cols + DataUtil.x_cols)
 # layer = data.getMCTSLayers(10, 2, DataUtil.xg_cols + DataUtil.x_cols)
-# layer.scaleData()
-#
-# kMeans = cl.kMeans()
-# kMeans.displayMetrics(layer.X, list(range(2,11)), layer.getDescription())
-#
-# kMeans.askHyperParameters()
-# kMeans.clusterData(layer.X, layer.getDescription())
-#
-#
-# kMeans.plotClusters(description=layer.getDescription())
+layer.scaleData()
+
+kMeans = cl.kMeans()
+kMeans.displayMetrics(layer.X, list(range(2,11)), layer.getDescription())
+
+kMeans.askHyperParameters()
+kMeans.clusterData(layer.X, layer.getDescription())
+
+
+kMeans.plotClusters(description=layer.getDescription())
+kMeans.plotValueHist(layer, omega=1e5)
+
+
+
+
+
+
+
+
+
 
 # %% DBSCAN clustering
-layer = data.getRolloutLayers(5, DataUtil.xg_cols)
+layer = data.getRolloutLayers(2, DataUtil.xg_cols)
 
 
 # layer = data.getMCTSLayers(6, 4, DataUtil.xg_cols + DataUtil.x_cols)
@@ -53,12 +63,14 @@ dbscan.clusterData(layer.X, layer.getDescription())
 
 dbscan.plotClusters(description=layer.getDescription())
 
-layer.computeValuesInLayer(5e4)
+layer.unscaleData()
+
+layer.computeNodeValues(1e5)
 
 clustVals = dict()
 for key, clust in dbscan.clusters.items():
-    clustVals[key] = layer.values.loc[clust.index,'value']
-    print('\n-------------------Cluster {}--------------------------'.format(key))
+    clustVals[key] = layer.values.loc[clust.index,'nodeValue']
+    print('\n-------------------Cluster {}: Size {}--------------------------'.format(key, len(clust)))
     print('Mean = {}'.format(np.mean(clustVals[key])))
     print('Median = {}'.format(np.median(clustVals[key])))
     print('Std = {}'.format(np.std(clustVals[key])))
@@ -71,6 +83,15 @@ for key, clust in dbscan.clusters.items():
 
 plt.show()
 
+
+
+
+
+
+
+
+
+
 # %% Mean Shift
 layer = data.getMCTSLayers(3,3, DataUtil.xg_cols)
 layer.scaleData()
@@ -80,7 +101,8 @@ ms.displayMetrics(layer.X, layer.getDescription())
 ms.askHyperParameters()
 ms.clusterData(layer.X)
 ms.plotClusters(description=layer.getDescription())
-layer.computeValuesInLayer(1e5)
+
+layer.computeNodeValues(1e5)
 
 val = layer.values['value'].values.flatten()
 valf = layer.values['termValue'].values.flatten()

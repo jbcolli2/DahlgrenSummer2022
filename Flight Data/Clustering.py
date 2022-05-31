@@ -6,37 +6,177 @@ import numpy as np
 
 import DataUtil
 
-class hpKMeans:
+
+class hyperParams:
+    def __init__(self):
+        self.description = 'with abstract hyperparameters'
+
+
+
+class hpNumClusters(hyperParams):
     def __init__(self, n_clusters = 2):
+        super().__init__()
+        self.description = 'NumClusters = {}'.format(n_clusters)
         self.n_clusters = n_clusters
 
-class hpDBSCAN:
+
+    @property
+    def n_clusters(self):
+        return self._n_clusters
+
+    @n_clusters.setter
+    def n_clusters(self, n_clusters):
+        self._n_clusters = n_clusters
+        self.description = ' with NumClusters = {}'.format(n_clusters)
+
+class hpDBSCAN(hyperParams):
     def __init__(self, eps = .5):
+        super().__init__()
         self.eps = eps
 
-class hpMeanShift:
+    @property
+    def eps(self):
+        return self._eps
+
+    @eps.setter
+    def eps(self, eps):
+        self._eps = eps
+        self.description = ' with Epsilon = {}'.format(eps)
+
+class hpMeanShift(hyperParams):
     def __init__(self, bandwidth):
+        super().__init__()
         self.bandwidth = None
 
+    @property
+    def bandwidth(self):
+        return self._bandwidth
+
+    @bandwidth.setter
+    def bandwidth(self, bandwidth):
+        self._bandwidth = bandwidth
+        self.description = ' with NumClusters = {}'.format(bandwidth)
 
 
-class kMeans:
+
+def runCluster(clusterAlg, dataObj, range):
+    clusterAlg.displayMetrics(dataObj.X, range, dataObj.getDescription())
+    clusterAlg.askHyperParameters()
+    clusterAlg.clusterData(dataObj.X, dataObj.getDescription())
+    clusterAlg.plotClusters(description=dataObj.getDescription())
+
+
+
+
+class clustAlg:
+    def __init__(self, name):
+        self.name = name
+        self.clusters = dict()
+        self.hyper = hyperParams()
+
+    def displayMetrics(self, X, hp_range, description):
+        print('Abstract displayMetrics')
+        pass
+
+    def askHyperParameters(self):
+        print('Abstract askHyper')
+        pass
+
+    def clusterData(self, X, description):
+        print('Abstract clusterData')
+        pass
+
+
+
+    def runClustering(self, X, hp_range, description):
+        self.displayMetrics(X, hp_range, description)
+        self.askHyperParameters()
+        self.clusterData(X, description)
+
+
+    # Plot the clusters in 2D scatter plot
+    def plotClusters(self, cols=None, description=None):
+        if cols == None:
+            cols = self.clusters[0].columns
+
+        if len(cols) > 6:
+            cols = cols[:6]
+
+        plotDescription = self.name + self.hyper.description + '\n' + description
+
+        numPlotCols = int(np.ceil(np.sqrt(len(cols))))
+        fig, ax = plt.subplots(len(cols), len(cols), figsize=(30, 30))
+        fig.set_size_inches(18, 18)
+        plt.subplots_adjust(wspace=0.5, hspace=0.5)
+        cmap = plt.cm.get_cmap('hsv', len(self.clusters))
+        for plotRow in range(len(cols)):
+            for plotCol in range(len(cols)):
+                if (plotRow != plotCol):
+                    for key, cluster in self.clusters.items():
+                        ax[plotRow, plotCol].scatter(cluster[cols[plotRow]], cluster[cols[plotCol]],
+                                                     cmap=cmap, s=5, label='C ' + str(key))
+                        ax[plotRow, plotCol].set_xlabel(cols[plotRow])
+                        ax[plotRow, plotCol].set_ylabel(cols[plotCol])
+                        ax[plotRow, plotCol].ticklabel_format(scilimits=(0, 0))
+
+        handles, labels = ax.flatten()[1].get_legend_handles_labels()
+        fig.legend(handles, labels, loc='upper left', fontsize=20)
+        plt.suptitle(plotDescription, fontsize=20)
+        fig.show()
+
+
+    # Plot a histogram of the values of each of the clusters
+    def plotValueHist(self, dataObj, omega, nBins = 20):
+        dataObj.unscaleData()
+
+        index = 0
+        clusterVals = dict()
+        for key, cluster in self.clusters.items():
+            clusterVals[key] = DataUtil.computeNodeValues(cluster, dataObj.Xall, omega)
+            index += 1
+
+        numRows = int(np.ceil(np.sqrt(len(clusterVals))))
+        numCols = numRows
+
+        fig, ax = plt.subplots(numRows, numCols, figsize=(30, 30))
+        fig.set_size_inches(18, 18)
+
+        clusterIter = iter(clusterVals)
+        clusterIdx = next(clusterIter)
+        for row in range(numRows):
+            for col in range(numCols):
+                clusterVals[clusterIdx].nodeValue.plot.hist(density=True, bins=nBins, ax=ax[row, col])
+                clusterVals[clusterIdx].nodeValue.plot.kde(ax=ax[row, col], title='Cluster {} | Size = {}'
+                                                           .format(clusterIdx, len(clusterVals[clusterIdx])))
+                ax[row, col].set_xlim([0, 1])
+                try:
+                    clusterIdx = next(clusterIter)
+                except StopIteration:
+                    break
+
+        plt.suptitle(self.name + self.hyper.description + '\n' + dataObj.getDescription())
+        fig.show()
+
+
+class kMeans(clustAlg):
     def __init__(self, n_init = 10, max_iter = 300, tol = 1e-4):
+        super().__init__('KMeans')
+
         self.n_init = n_init
         self.max_iter = max_iter
         self.tol = tol
 
         # Hyperparameters for kmeans
-        self.hyper = hpKMeans()
+        self.hyper = hpNumClusters()
 
 
     # Run kmeans for many different cluster numbers and display the inertia and sil_score for each
     #   number of clusters.  This will be plotted to determine the correct number of clusters to use
-    def displayMetrics(self, X, cluster_range, description = "Unknown Data"):
-        inertia = pd.DataFrame(data=[], columns=['inertia'], index=cluster_range)
-        sil_score = pd.DataFrame(data=[], columns=['silouette_avg'], index=cluster_range)
+    def displayMetrics(self, X, hp_range, description = "Unknown Data"):
+        inertia = pd.DataFrame(data=[], columns=['inertia'], index=hp_range)
+        sil_score = pd.DataFrame(data=[], columns=['silouette_avg'], index=hp_range)
 
-        for n_clusters in cluster_range:
+        for n_clusters in hp_range:
             kmeans = KMeans(n_clusters=n_clusters, n_init=self.n_init, max_iter=self.max_iter, tol=self.tol)
             kmeans.fit(X)
             inertia.loc[n_clusters] = kmeans.inertia_
@@ -44,15 +184,15 @@ class kMeans:
             clusters_predict = kmeans.predict(X)
             clusters_predict = pd.DataFrame(data=clusters_predict, columns=['cluster'], index=X.index)
 
-            sil_score.loc[n_clusters] = Util.silhouette_analysis(X, clusters_predict, n_clusters)
+            sil_score.loc[n_clusters] = DataUtil.silhouette_analysis(X, clusters_predict, n_clusters)
 
         fig, (ax1, ax2) = plt.subplots(1,2)
         fig.set_size_inches(18, 12)
         plt.suptitle(description)
         ax1.set_title('Interia vs. number of clusters')
-        ax1.plot(cluster_range, inertia)
+        ax1.plot(hp_range, inertia)
         ax2.set_title('Silhouette Score vs number of clusters')
-        ax2.plot(cluster_range, sil_score, '.-')
+        ax2.plot(hp_range, sil_score, '.-')
         fig.show()
 
 
@@ -71,45 +211,22 @@ class kMeans:
         self.predClusterLabels = pd.DataFrame(kmeans.predict(X), index=X.index, columns=['cluster'])
 
         # Create a list of DataFrames containing all the clusters of the data
-        self.clusters = []
+        self.clusters = dict()
         for clusterIdx in range(self.hyper.n_clusters):
-            self.clusters.append(X.loc[self.predClusterLabels.cluster == clusterIdx])
+            self.clusters[clusterIdx] = X.loc[self.predClusterLabels.cluster == clusterIdx]
 
 
 
 
-    # Plot the clusters in 2D scatter plot
-    def plotClusters(self, cols = None, description=None):
-        if cols == None:
-            cols = self.clusters[0].columns
 
-        if len(cols) > 6:
-            cols = cols[:6]
-
-        plotDescription = 'KMeans with k = ' + str(self.hyper.n_clusters) + '\n' + description
-
-        numPlotCols = int(np.ceil(np.sqrt(len(cols))))
-        fig, ax = plt.subplots(len(cols), len(cols), figsize=(30,30))
-        fig.set_size_inches(18, 18)
-        plt.subplots_adjust(wspace=0.5, hspace=0.5)
-        cmap = plt.cm.get_cmap('hsv', len(self.clusters))
-        for plotRow in range(len(cols)):
-            for plotCol in range(len(cols)):
-                if(plotRow != plotCol):
-                    for cluster in range(len(self.clusters)):
-                        ax[plotRow, plotCol].scatter(self.clusters[cluster][cols[plotRow]], self.clusters[cluster][cols[plotCol]],
-                                                     cmap=cmap, s=5)
-                        ax[plotRow, plotCol].set_xlabel(cols[plotRow])
-                        ax[plotRow, plotCol].set_ylabel(cols[plotCol])
-                        ax[plotRow, plotCol].ticklabel_format(scilimits=(0,0))
-
-        plt.suptitle(plotDescription)
-        fig.show()
 
 
 from sklearn.neighbors import NearestNeighbors
-class dbscan:
+class dbscan(clustAlg):
     def __init__(self, min_samples = 5):
+        super().__init__('DBSCAN')
+
+
         self.min_samples = min_samples
 
         # Hyperparameters for kmeans
@@ -120,7 +237,7 @@ class dbscan:
     #   number of clusters.  This will be plotted to determine the correct number of clusters to use
 
 
-    def displayMetrics(self, X, description = "Unknown Data"):
+    def displayMetrics(self, X, hp_range, description = "Unknown Data"):
 
         '''
             Create plot of distance to nearest neighbors to determine epislon.  From this website
@@ -138,14 +255,7 @@ class dbscan:
 
 
 
-        # fig, (ax1, ax2) = plt.subplots(1,2)
-        # fig.set_size_inches(18, 12)
-        # plt.suptitle(description)
-        # ax1.set_title('Interia vs. number of clusters')
-        # ax1.plot(cluster_range, inertia)
-        # ax2.set_title('Silhouette Score vs number of clusters')
-        # ax2.plot(cluster_range, sil_score, '.-')
-        # fig.show()
+
 
 
     # Obtain the number of hyperparameters to use from the user
@@ -176,56 +286,29 @@ class dbscan:
 
 
 
-    # Plot the clusters in 2D scatter plot
-    def plotClusters(self, cols = None, description=None):
-        if cols == None:
-            cols = self.clusters[0].columns
-
-        if len(cols) > 6:
-            cols = cols[:6]
-
-        plotDescription = 'DBSCAN with eps = ' + str(self.hyper.eps) + '\n' + description
-
-        numPlotCols = int(np.ceil(np.sqrt(len(cols))))
-        fig, ax = plt.subplots(len(cols), len(cols), figsize=(30,30))
-        fig.set_size_inches(18, 18)
-        plt.subplots_adjust(wspace=0.5, hspace=0.5)
-        cmap = plt.cm.get_cmap('hsv', len(self.clusters))
-        for plotRow in range(len(cols)):
-            for plotCol in range(len(cols)):
-                if(plotRow != plotCol):
-                    for key, cluster in self.clusters.items():
-                        ax[plotRow, plotCol].scatter(cluster[cols[plotRow]], cluster[cols[plotCol]],
-                                                     cmap=cmap, s=5, label='C ' + str(key))
-                        ax[plotRow, plotCol].set_xlabel(cols[plotRow])
-                        ax[plotRow, plotCol].set_ylabel(cols[plotCol])
-                        ax[plotRow, plotCol].ticklabel_format(scilimits=(0,0))
-
-
-        handles, labels = ax.flatten()[1].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper left')
-        plt.suptitle(plotDescription)
-        fig.show()
+    #     fig.show()
 
 
 from sklearn.mixture import GaussianMixture
-class gaussian:
+class gaussian(clustAlg):
     def __init__(self, n_init = 10, max_iter = 300, tol = 1e-4):
+        super().__init__('Gaussian Mixture')
+
         self.n_init = n_init
         self.max_iter = max_iter
         self.tol = tol
 
         # Hyperparameters for kmeans
-        self.hyper = hpKMeans()
+        self.hyper = hpNumClusters()
 
 
     # Run kmeans for many different cluster numbers and display the inertia and sil_score for each
     #   number of clusters.  This will be plotted to determine the correct number of clusters to use
-    def displayMetrics(self, X, cluster_range, description = "Unknown Data"):
-        bic = pd.DataFrame(data=[], columns=['BIC'], index=cluster_range)
-        aic = pd.DataFrame(data=[], columns=['AIC'], index=cluster_range)
+    def displayMetrics(self, X, hp_range, description = "Unknown Data"):
+        bic = pd.DataFrame(data=[], columns=['BIC'], index=hp_range)
+        aic = pd.DataFrame(data=[], columns=['AIC'], index=hp_range)
 
-        for n_clusters in cluster_range:
+        for n_clusters in hp_range:
             gauss = GaussianMixture(n_components=n_clusters, n_init=self.n_init, max_iter=self.max_iter, tol=self.tol)
             gauss.fit(X)
             if not gauss.converged_:
@@ -275,38 +358,40 @@ class gaussian:
 
 
     # Plot the clusters in 2D scatter plot
-    def plotClusters(self, cols = None, description=None):
-        if cols == None:
-            cols = self.clusters[0].columns
-
-        if len(cols) > 6:
-            cols = cols[:6]
-
-        plotDescription = 'Gaussian Mixture with k = ' + str(self.hyper.n_clusters) + '\n' + description
-
-        numPlotCols = int(np.ceil(np.sqrt(len(cols))))
-        fig, ax = plt.subplots(len(cols), len(cols), figsize=(30,30))
-        fig.set_size_inches(18, 18)
-        plt.subplots_adjust(wspace=0.5, hspace=0.5)
-        cmap = plt.cm.get_cmap('hsv', len(self.clusters))
-        for plotRow in range(len(cols)):
-            for plotCol in range(len(cols)):
-                if(plotRow != plotCol):
-                    for key, cluster in self.clusters.items():
-                        ax[plotRow, plotCol].scatter(cluster[cols[plotRow]], cluster[cols[plotCol]],
-                                                     cmap=cmap, s=5, label='C ' + str(key))
-                        ax[plotRow, plotCol].set_xlabel(cols[plotRow])
-                        ax[plotRow, plotCol].set_ylabel(cols[plotCol])
-                        ax[plotRow, plotCol].ticklabel_format(scilimits=(0,0))
-
-        handles, labels = ax.flatten()[1].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper left')
-        plt.suptitle(plotDescription)
-        fig.show()
+    # def plotClusters(self, cols = None, description=None):
+    #     if cols == None:
+    #         cols = self.clusters[0].columns
+    #
+    #     if len(cols) > 6:
+    #         cols = cols[:6]
+    #
+    #     plotDescription = 'Gaussian Mixture with k = ' + str(self.hyper.n_clusters) + '\n' + description
+    #
+    #     numPlotCols = int(np.ceil(np.sqrt(len(cols))))
+    #     fig, ax = plt.subplots(len(cols), len(cols), figsize=(30,30))
+    #     fig.set_size_inches(18, 18)
+    #     plt.subplots_adjust(wspace=0.5, hspace=0.5)
+    #     cmap = plt.cm.get_cmap('hsv', len(self.clusters))
+    #     for plotRow in range(len(cols)):
+    #         for plotCol in range(len(cols)):
+    #             if(plotRow != plotCol):
+    #                 for key, cluster in self.clusters.items():
+    #                     ax[plotRow, plotCol].scatter(cluster[cols[plotRow]], cluster[cols[plotCol]],
+    #                                                  cmap=cmap, s=5, label='C ' + str(key))
+    #                     ax[plotRow, plotCol].set_xlabel(cols[plotRow])
+    #                     ax[plotRow, plotCol].set_ylabel(cols[plotCol])
+    #                     ax[plotRow, plotCol].ticklabel_format(scilimits=(0,0))
+    #
+    #     handles, labels = ax.flatten()[1].get_legend_handles_labels()
+    #     fig.legend(handles, labels, loc='upper left')
+    #     plt.suptitle(plotDescription)
+    #     fig.show()
 
 from sklearn.cluster import MeanShift, estimate_bandwidth
-class meanShift:
+class meanShift(clustAlg):
     def __init__(self, quantile=0.5):
+        super().__init__('MeanShift')
+
         self.batch_n = None
         self.quantile = quantile
 
@@ -315,7 +400,7 @@ class meanShift:
 
     # Run kmeans for many different cluster numbers and display the inertia and sil_score for each
     #   number of clusters.  This will be plotted to determine the correct number of clusters to use
-    def displayMetrics(self, X, description="Unknown Data"):
+    def displayMetrics(self, X, hp_range, description="Unknown Data"):
         return
 
     # Obtain the number of hyperparameters to use from the user
@@ -347,31 +432,31 @@ class meanShift:
 
 
     # Plot the clusters in 2D scatter plot
-    def plotClusters(self, cols=None, description=None):
-        if cols == None:
-            cols = self.clusters[0].columns
-
-        if len(cols) > 6:
-            cols = cols[:6]
-
-        plotDescription = 'MeanShift with bandwidth = ' + str(self.hyper.bandwidth) + '\n' + description
-
-        numPlotCols = int(np.ceil(np.sqrt(len(cols))))
-        fig, ax = plt.subplots(len(cols), len(cols), figsize=(30, 30))
-        fig.set_size_inches(18, 18)
-        plt.subplots_adjust(wspace=0.5, hspace=0.5)
-        cmap = plt.cm.get_cmap('hsv', len(self.clusters))
-        for plotRow in range(len(cols)):
-            for plotCol in range(len(cols)):
-                if (plotRow != plotCol):
-                    for key, cluster in self.clusters.items():
-                        ax[plotRow, plotCol].scatter(cluster[cols[plotRow]], cluster[cols[plotCol]],
-                                                     cmap=cmap, s=5, label='C ' + str(key))
-                        ax[plotRow, plotCol].set_xlabel(cols[plotRow])
-                        ax[plotRow, plotCol].set_ylabel(cols[plotCol])
-                        ax[plotRow, plotCol].ticklabel_format(scilimits=(0, 0))
-
-        handles, labels = ax.flatten()[1].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper left', fontsize=20)
-        plt.suptitle(plotDescription, fontsize=20)
-        fig.show()
+    # def plotClusters(self, cols=None, description=None):
+    #     if cols == None:
+    #         cols = self.clusters[0].columns
+    #
+    #     if len(cols) > 6:
+    #         cols = cols[:6]
+    #
+    #     plotDescription = 'MeanShift with bandwidth = ' + str(self.hyper.bandwidth) + '\n' + description
+    #
+    #     numPlotCols = int(np.ceil(np.sqrt(len(cols))))
+    #     fig, ax = plt.subplots(len(cols), len(cols), figsize=(30, 30))
+    #     fig.set_size_inches(18, 18)
+    #     plt.subplots_adjust(wspace=0.5, hspace=0.5)
+    #     cmap = plt.cm.get_cmap('hsv', len(self.clusters))
+    #     for plotRow in range(len(cols)):
+    #         for plotCol in range(len(cols)):
+    #             if (plotRow != plotCol):
+    #                 for key, cluster in self.clusters.items():
+    #                     ax[plotRow, plotCol].scatter(cluster[cols[plotRow]], cluster[cols[plotCol]],
+    #                                                  cmap=cmap, s=5, label='C ' + str(key))
+    #                     ax[plotRow, plotCol].set_xlabel(cols[plotRow])
+    #                     ax[plotRow, plotCol].set_ylabel(cols[plotCol])
+    #                     ax[plotRow, plotCol].ticklabel_format(scilimits=(0, 0))
+    #
+    #     handles, labels = ax.flatten()[1].get_legend_handles_labels()
+    #     fig.legend(handles, labels, loc='upper left', fontsize=20)
+    #     plt.suptitle(plotDescription, fontsize=20)
+    #     fig.show()

@@ -34,17 +34,20 @@ def computeUniqueID(row, IDMult):
 class MCTSData:
 
     # Ctor passed the directory of the data and loads all the data into members
-    def __init__(self, dir_str, iteration_names=None, rollout_name=None):
+    def __init__(self, dir_str, iteration_names=None, path_names=None, rollout_name=None):
         self.dir_str = dir_str
 
         if(iteration_names == None):
             file_names = listdir(dir_str)
             self.iteration_names = [s for s in file_names if s[0] == 'M']
             self.iteration_names = [dir_str + s for s in self.iteration_names]
-            self.rollout_name = dir_str + file_names[-1]
+            self.path_names = [s for s in file_names if s[0] == 'P']
+            self.path_names = [dir_str + s for s in self.path_names]
+            self.rollout_name = dir_str + [ff for ff in file_names if ff[0] == 'r'][0]
         else:
             self.iteration_names = iteration_names
             self.rollout_name = rollout_name
+            self.path_names = path_names
 
 
         self.mcts_data = [None] #mcts_data is a list holding each iterations data
@@ -173,18 +176,18 @@ class Rollout:
         self.filename = rollout_filename
         self.original_data = pd.read_csv(rollout_filename)
         self.original_data = self.original_data.dropna(how='all')
-        self.data = self.original_data.reset_index()
-        self.original_data = self.data
+        self.paths = self.original_data.reset_index()
+        self.original_data = self.paths
         self.original_data.rename(columns={'index': 'uniqueID'}, inplace=True)
 
 
 
 
         # Reformat into paths
-        multiIdx = pd.MultiIndex.from_product([np.arange(1, int(self.data.shape[0] / 5) + 1, 1), [1, 2, 3, 4, 5]],
+        multiIdx = pd.MultiIndex.from_product([np.arange(1, int(self.paths.shape[0] / 5) + 1, 1), [1, 2, 3, 4, 5]],
                                               names=['path', 'layer'])
-        self.data = pd.DataFrame(data=self.data.values, index=multiIdx, columns=self.data.columns)
-        self.dataIndex = pd.Series(data=self.data['uniqueID'], index=multiIdx)
+        self.paths = pd.DataFrame(data=self.paths.values, index=multiIdx, columns=self.paths.columns)
+        self.dataIndex = pd.Series(data=self.paths['uniqueID'], index=multiIdx)
 
         self.japanTree = True
 
@@ -195,16 +198,16 @@ class Rollout:
     # Get a bunch of paths with all layers
     def getPaths(self, paths, cols=slice(None)):
         idx = pd.IndexSlice
-        return Data(self.data.loc[idx[paths, cols]], self.data, self.filename, self.japanTree, DataType.PATH, paths, cols)
+        return Data(self.paths.loc[idx[paths, cols]], self.paths, self.filename, self.japanTree, DataType.PATH, paths, cols)
 
     # Get all nodes from some layers
     def getLayers(self, layers, cols=slice(None)):
         idx = pd.IndexSlice
-        return Data(self.data.loc[idx[:, layers], cols], self.data, self.filename, self.japanTree, DataType.LAYER, layers, cols)
+        return Data(self.paths.loc[idx[:, layers], cols], self.paths, self.filename, self.japanTree, DataType.LAYER, layers, cols)
 
     # Get full data set
     def getData(self, cols=slice(None)):
-        return Data(self.data[cols], self.data, self.filename, self.japanTree, DataType.ALL, None, cols)
+        return Data(self.paths[cols], self.paths, self.filename, self.japanTree, DataType.ALL, None, cols)
 
 
 '''
@@ -241,14 +244,22 @@ class Data:
         self.cols = cols
 
         self.scaler = pp.StandardScaler()
+        self.data_scaled = False
+
+        self.values = None
 
 
 
     def scaleData(self):
-        self.X = pd.DataFrame(data=self.scaler.fit_transform(self.X), columns=self.X.columns, index=self.X.index)
+        if self.data_scaled == False:
+            self.X = pd.DataFrame(data=self.scaler.fit_transform(self.X), columns=self.X.columns, index=self.X.index)
+            self.data_scaled = True
+
 
     def unscaleData(self):
-        self.X = pd.DataFrame(data=self.scaler.inverse_transform(self.X), columns=self.X.columns, index=self.X.index)
+        if self.data_scaled == True:
+            self.X = pd.DataFrame(data=self.scaler.inverse_transform(self.X), columns=self.X.columns, index=self.X.index)
+            self.data_scaled = False
 
     def getDescription(self):
         sType = self.type.name
@@ -266,83 +277,104 @@ class Data:
         return self.filename + '  |  ' + str(sType) + ' ' + sValue +'\n' + sCols
 
 
-    # Compute nodal value of all nodes in a layer.  Average all in-flight probs, then
-    #   multiply with terminal prob.
 
-    # TODO: Currently using single $omega$ for all constraints, should instead
-    #   Use different omega for each constraint
-def computeValuesForTree(X, omega, japFormat = True):
-    '''
-    :brief: For the data X, computes the nodal value and the associated terminal probability.
-        Does this by traversing layer-by-layer.  In each layer the value of all nodes are calculated.
-        If tree is in Japan-format, then layers below 1st are computed by simply subtracting
-        the current in-flight prob from the value of the node above in the path
+    def computeNodeValues(self, omega):
+        self.values = pd.DataFrame(data=[], columns=['nodeValue', 'termValue'], index=self.X.index)
 
-    :param X: Full data from a single file. Contains all the nodes in the tree in path format
-    :param omega: Constant value to be used for all constraints, in-flight and terminal
-    :param japFormat: Is the tree stored in Japanese format or branching format
+        distinctNodeIDs = np.unique(self.Xall.loc[self.X.index, 'uniqueID'].values)
 
-    :return: DataFrame with values and termValues columns added to X
-    '''
+        for id in distinctNodeIDs:
+            allPathsForID = self.X.loc[self.Xall.uniqueID == id]
 
+            valueOfID = 0
+            termValueOfID = 0
+            for rootIdx in allPathsForID.index:
+                retVal, retTermVal = self.computeValueForPath(rootIdx, omega)
+                valueOfID += retVal
+                termValueOfID += retTermVal
 
-    # self.values = pd.DataFrame(data=[], columns=['value', 'termValue'], index=self.X.index)
-
-    # TODO: Store terminal value.  Either average or somehow all terminal values
-    if(japFormat == False or japFormat == True):
-        # Loop through all layers
-        numLayers = max(X.index)[1]
-
-        for layer in range(1,numLayers+1):
-            idx = pd.IndexSlice
-            Y = X.loc[idx[:,layer]]  #Y is all rows in a particular layer
-
-            distinctNodeIDs = np.unique(Y.loc[Y.index, 'uniqueID'].values)
-
-            for id in distinctNodeIDs:
-                allPathsForID = Y.loc[Y.uniqueID == id]
-
-                valueOfID = 0
-                for nodeIdx in allPathsForID.index:
-                    valueOfID += computeValueForPath(Y, nodeIdx, omega)
-
-                valueOfID = valueOfID/len(allPathsForID)
-                X.loc[allPathsForID.index, 'nodeValue'] = valueOfID
-
-    else:
-        idx = pd.IndexSlice
-        Y = X.loc[idx[:,1]]  # Y is all nodes on layer 1.  Should just be one row
+            valueOfID = valueOfID/len(allPathsForID)
+            termValueOfID = termValueOfID/len(allPathsForID)
+            self.values.loc[allPathsForID.index, 'nodeValue'] = valueOfID
+            self.values.loc[allPathsForID.index, 'termValue'] = termValueOfID
+            # TODO: Store terminal value.  Either average or somehow all terminal values
 
 
 
 
 
 
+    def computeValueForPath(self, rootIdx, omega):
+        path = rootIdx[0]
+        layer = rootIdx[1]
+        termLayer = max(self.Xall.loc[path, :].index)
+        nodeValue = 0
+
+        for futureLayer in range(layer + 1, termLayer + 1):
+            nodeValue += computeFlightProb(self.Xall.loc[(path, futureLayer), :], omega)
+        if (nodeValue != 0):
+            nodeValue = nodeValue / (termLayer - layer)
+        else:
+            nodeValue = 1  # if there are no future nodes, just want the terminal probability
+
+        termValue = computeTermProb(self.Xall.loc[(path, termLayer), :], omega)
+        nodeValue *= termValue
+
+        return nodeValue, termValue
 
 
 
-def computeValueForPath(self, X, nodeIdx, omega):
-    path = nodeIdx[0]
-    layer = nodeIdx[1]
-    termLayer = max(X.loc[path, :].index)
+
+
+
+def computeNodeValues(X, Xall, omega):
+    values = pd.DataFrame(data=[], columns=['nodeValue', 'termValue'], index=X.index)
+
+    distinctNodeIDs = np.unique(Xall.loc[X.index, 'uniqueID'].values)
+
+    for id in distinctNodeIDs:
+        allPathsForID = X.loc[Xall.uniqueID == id]
+
+        valueOfID = 0
+        termValueOfID = 0
+        for rootIdx in allPathsForID.index:
+            retVal, retTermVal = computeValueForPath(Xall, rootIdx, omega)
+            valueOfID += retVal
+            termValueOfID += retTermVal
+
+        valueOfID = valueOfID/len(allPathsForID)
+        termValueOfID = termValueOfID/len(allPathsForID)
+        values.loc[allPathsForID.index, 'nodeValue'] = valueOfID
+        values.loc[allPathsForID.index, 'termValue'] = termValueOfID
+
+    return values
+
+
+
+
+
+
+def computeValueForPath(Xall, rootIdx, omega):
+    path = rootIdx[0]
+    layer = rootIdx[1]
+    termLayer = max(Xall.loc[path, :].index)
     nodeValue = 0
 
     for futureLayer in range(layer + 1, termLayer + 1):
-        nodeValue += self.__computeFlightProb(X.loc[(path, futureLayer), :], omega)
-
+        nodeValue += computeFlightProb(Xall.loc[(path, futureLayer), :], omega)
     if (nodeValue != 0):
         nodeValue = nodeValue / (termLayer - layer)
     else:
         nodeValue = 1  # if there are no future nodes, just want the terminal probability
 
-    termValue = self.__computeTermProb(X.loc[(path, termLayer), :], omega)
+    termValue = computeTermProb(Xall.loc[(path, termLayer), :], omega)
     nodeValue *= termValue
 
-    return nodeValue
+    return nodeValue, termValue
 
 
 # Method to compute probability using in-flight constraints.  Passed in single node data
-def __computeFlightProb(self, X, omega):
+def computeFlightProb(X, omega):
     prob = 1
     constCols = ['c_1', 'c_2', 'c_3', 'c_4', 'c_5']
     for constraint in constCols:
@@ -351,7 +383,7 @@ def __computeFlightProb(self, X, omega):
     return prob
 
 # Method to compute probability using terminal constraints.  Passed in a single node data
-def __computeTermProb(self, X, omega):
+def computeTermProb(X, omega):
     prob = 1
     constCols = ['cf_1', 'cf_2', 'cf_3', 'cf_4', 'cf_5', 'cf_6']
     for constraint in constCols:
