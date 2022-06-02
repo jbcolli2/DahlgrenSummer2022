@@ -59,11 +59,6 @@ class hpMeanShift(hyperParams):
 
 
 
-def runCluster(clusterAlg, dataObj, range):
-    clusterAlg.displayMetrics(dataObj.X, range, dataObj.getDescription())
-    clusterAlg.askHyperParameters()
-    clusterAlg.clusterData(dataObj.X, dataObj.getDescription())
-    clusterAlg.plotClusters(description=dataObj.getDescription())
 
 
 
@@ -73,6 +68,7 @@ class clustAlg:
         self.name = name
         self.clusters = dict()
         self.hyper = hyperParams()
+        self.dataObj = None
 
     def displayMetrics(self, X, hp_range, description):
         print('Abstract displayMetrics')
@@ -88,21 +84,23 @@ class clustAlg:
 
 
 
-    def runClustering(self, X, hp_range, description):
-        self.displayMetrics(X, hp_range, description)
+    def runClustering(self, dataObj, hp_range):
+        dataObj.scaleData()
+        self.displayMetrics(dataObj.X, hp_range, dataObj.getDescription())
         self.askHyperParameters()
-        self.clusterData(X, description)
+        self.clusterData(dataObj)
+        dataObj.unscaleData()
 
 
     # Plot the clusters in 2D scatter plot
-    def plotClusters(self, cols=None, description=None):
+    def plotClusters(self, cols=None):
         if cols == None:
             cols = self.clusters[0].columns
 
         if len(cols) > 6:
             cols = cols[:6]
 
-        plotDescription = self.name + self.hyper.description + '\n' + description
+        plotDescription = self.name + self.hyper.description + '\n' + self.dataObj.getDescription()
 
         numPlotCols = int(np.ceil(np.sqrt(len(cols))))
         fig, ax = plt.subplots(len(cols), len(cols), figsize=(30, 30))
@@ -126,14 +124,14 @@ class clustAlg:
 
 
     # Plot a histogram of the values of each of the clusters
-    def plotValueHist(self, dataObj, omega, nBins = 20):
-        dataObj.unscaleData()
+    def plotValueHist(self, omega, nBins = 20):
+        bins = np.arange(0, 1 + 1/nBins, 1/nBins)
 
-        index = 0
+        self.dataObj.unscaleData()
+
         clusterVals = dict()
         for key, cluster in self.clusters.items():
-            clusterVals[key] = DataUtil.computeNodeValues(cluster, dataObj.Xall, omega)
-            index += 1
+            clusterVals[key] = DataUtil.computeNodeValues(cluster, self.dataObj.Xall, omega)
 
         numRows = int(np.ceil(np.sqrt(len(clusterVals))))
         numCols = numRows
@@ -145,7 +143,7 @@ class clustAlg:
         clusterIdx = next(clusterIter)
         for row in range(numRows):
             for col in range(numCols):
-                clusterVals[clusterIdx].nodeValue.plot.hist(density=True, bins=nBins, ax=ax[row, col])
+                clusterVals[clusterIdx].nodeValue.plot.hist(density=True, bins=bins, ax=ax[row, col])
                 clusterVals[clusterIdx].nodeValue.plot.kde(ax=ax[row, col], title='Cluster {} | Size = {}'
                                                            .format(clusterIdx, len(clusterVals[clusterIdx])))
                 ax[row, col].set_xlim([0, 1])
@@ -154,10 +152,58 @@ class clustAlg:
                 except StopIteration:
                     break
 
-        plt.suptitle(self.name + self.hyper.description + '\n' + dataObj.getDescription())
+        plt.suptitle(self.name + self.hyper.description + '\n' + self.dataObj.getDescription() + '\n Omega = ' + str(omega))
         fig.show()
 
 
+
+    # Compute the stats such as mean, median and standard deviation of the value for each cluster and store in DataFrame
+    def computeClusterStats(self, omega, val_bounds=[0,1], std_bounds=[0,.3]):
+        clusterValStats = pd.DataFrame(data=[], columns=['mean', 'median', 'std_dev'], index=self.clusters.keys())
+
+        clusterVals = dict()
+        for key, cluster in self.clusters.items():
+            clusterVals[key] = DataUtil.computeNodeValues(cluster, self.dataObj.Xall, omega)
+            clusterValStats.loc[key, 'mean'] = np.mean(clusterVals[key].nodeValue)
+            clusterValStats.loc[key, 'median'] = np.median(clusterVals[key].nodeValue)
+            clusterValStats.loc[key, 'std_dev'] = np.std(clusterVals[key].nodeValue)
+
+        median = clusterValStats['median'].values
+        median = np.sort(median)
+        mean = clusterValStats['mean'].values
+        mean = np.sort(mean)
+        std = clusterValStats['std_dev'].values
+        std = np.sort(std)
+
+        fig, ax = plt.subplots(2, 2, figsize=(30, 30))
+        fig.set_size_inches(18, 18)
+
+        ax[0,0].plot(median, '.-')
+        ax[0,0].set_title('Median of {} Clusters'.format(len(clusterVals)))
+        ax[0,0].set_ylim(val_bounds)
+        ax[0,1].plot(mean, 'r.-')
+        ax[0,1].set_title('Mean of {} Clusters'.format(len(clusterVals)))
+        ax[0,1].set_ylim(val_bounds)
+        ax[1,0].plot(std, 'g.-')
+        ax[1,0].set_title('StdDev of {} Clusters'.format(len(clusterVals)))
+        ax[1,0].set_ylim(std_bounds)
+
+        sortedMean = clusterValStats.sort_values(by=['mean'])
+        sortedMean.reset_index(inplace=True)
+        mean = sortedMean['mean'].values
+        std = sortedMean['std_dev'].values
+        ax[1,1].errorbar(sortedMean.index.values, mean, yerr=std, capsize=11, fmt='k.-', ecolor='m')
+        ax[1,1].set_title('Mean with StdDev error bars | {} Clusters'.format(len(clusterVals)))
+        ax[1,1].set_ylim(val_bounds)
+
+        plt.suptitle(self.name + self.hyper.description + '\n' + self.dataObj.getDescription())
+        fig.show()
+        return clusterValStats
+
+
+
+
+# %% KMEANS
 class kMeans(clustAlg):
     def __init__(self, n_init = 10, max_iter = 300, tol = 1e-4):
         super().__init__('KMeans')
@@ -186,12 +232,16 @@ class kMeans(clustAlg):
 
             sil_score.loc[n_clusters] = DataUtil.silhouette_analysis(X, clusters_predict, n_clusters)
 
+            print('For {} clusters: Avg Sill = {} and Inertia = {}'.format(n_clusters, sil_score.loc[n_clusters,'silouette_avg'],
+                                                                           inertia.loc[n_clusters,'inertia']))
+
         fig, (ax1, ax2) = plt.subplots(1,2)
         fig.set_size_inches(18, 12)
         plt.suptitle(description)
         ax1.set_title('Interia vs. number of clusters')
         ax1.plot(hp_range, inertia)
         ax2.set_title('Silhouette Score vs number of clusters')
+        ax2.grid(axis='x')
         ax2.plot(hp_range, sil_score, '.-')
         fig.show()
 
@@ -205,7 +255,10 @@ class kMeans(clustAlg):
 
 
     # Actually cluster the data and store the clusters in a list of DataFrames called `clusters`
-    def clusterData(self, X: pd.DataFrame, description="Unknown Data"):
+    def clusterData(self, dataObj: DataUtil.Data, description="Unknown Data"):
+        self.dataObj = dataObj
+        X = self.dataObj.X
+
         kmeans = KMeans(n_clusters=self.hyper.n_clusters, n_init=self.n_init, max_iter=self.max_iter, tol=self.tol)
         kmeans.fit(X)
         self.predClusterLabels = pd.DataFrame(kmeans.predict(X), index=X.index, columns=['cluster'])
@@ -267,7 +320,10 @@ class dbscan(clustAlg):
 
 
     # Actually cluster the data and store the clusters in a list of DataFrames called `clusters`
-    def clusterData(self, X: pd.DataFrame, description="Unknown Data"):
+    def clusterData(self, dataObj: DataUtil.Data, description="Unknown Data"):
+        self.dataObj = dataObj
+        X = self.dataObj.X
+
         dbscan = DBSCAN(eps=self.hyper.eps, min_samples=self.min_samples)
         dbscan.fit(X)
 
@@ -338,7 +394,10 @@ class gaussian(clustAlg):
 
 
     # Actually cluster the data and store the clusters in a list of DataFrames called `clusters`
-    def clusterData(self, X: pd.DataFrame, description="Unknown Data"):
+    def clusterData(self, dataObj: DataUtil.Data, description="Unknown Data"):
+        self.dataObj = dataObj
+        X = self.dataObj.X
+
         self.gauss = GaussianMixture(n_components=self.hyper.n_clusters, n_init=self.n_init, max_iter=self.max_iter, tol=self.tol)
         self.gauss.fit(X)
         predict = self.gauss.predict_proba(X)
@@ -411,7 +470,10 @@ class meanShift(clustAlg):
         return
 
     # Actually cluster the data and store the clusters in a list of DataFrames called `clusters`
-    def clusterData(self, X: pd.DataFrame, description="Unknown Data"):
+    def clusterData(self, dataObj: DataUtil.Data, description="Unknown Data"):
+        self.dataObj = dataObj
+        X = self.dataObj.X
+
         self.hyper.bandwidth = estimate_bandwidth(X, quantile=self.quantile, n_samples=self.batch_n)
         self.ms = MeanShift(bandwidth=self.hyper.bandwidth)
         self.ms.fit(X)
@@ -431,32 +493,4 @@ class meanShift(clustAlg):
 
 
 
-    # Plot the clusters in 2D scatter plot
-    # def plotClusters(self, cols=None, description=None):
-    #     if cols == None:
-    #         cols = self.clusters[0].columns
-    #
-    #     if len(cols) > 6:
-    #         cols = cols[:6]
-    #
-    #     plotDescription = 'MeanShift with bandwidth = ' + str(self.hyper.bandwidth) + '\n' + description
-    #
-    #     numPlotCols = int(np.ceil(np.sqrt(len(cols))))
-    #     fig, ax = plt.subplots(len(cols), len(cols), figsize=(30, 30))
-    #     fig.set_size_inches(18, 18)
-    #     plt.subplots_adjust(wspace=0.5, hspace=0.5)
-    #     cmap = plt.cm.get_cmap('hsv', len(self.clusters))
-    #     for plotRow in range(len(cols)):
-    #         for plotCol in range(len(cols)):
-    #             if (plotRow != plotCol):
-    #                 for key, cluster in self.clusters.items():
-    #                     ax[plotRow, plotCol].scatter(cluster[cols[plotRow]], cluster[cols[plotCol]],
-    #                                                  cmap=cmap, s=5, label='C ' + str(key))
-    #                     ax[plotRow, plotCol].set_xlabel(cols[plotRow])
-    #                     ax[plotRow, plotCol].set_ylabel(cols[plotCol])
-    #                     ax[plotRow, plotCol].ticklabel_format(scilimits=(0, 0))
-    #
-    #     handles, labels = ax.flatten()[1].get_legend_handles_labels()
-    #     fig.legend(handles, labels, loc='upper left', fontsize=20)
-    #     plt.suptitle(plotDescription, fontsize=20)
-    #     fig.show()
+
