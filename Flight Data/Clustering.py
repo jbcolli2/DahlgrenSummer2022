@@ -84,7 +84,7 @@ class clustAlg:
 
 
 
-    def runClustering(self, dataObj, hp_range):
+    def runClustering(self, dataObj, hp_range=None):
         dataObj.scaleData()
         self.displayMetrics(dataObj.X, hp_range, dataObj.getDescription())
         self.askHyperParameters()
@@ -197,7 +197,7 @@ class clustAlg:
 
 
         ax[1,1].boxplot(boxwhis_data, whis=(0,100))
-        ax[1,1].set_title('Mean with StdDev error bars | {} Clusters'.format(len(clusterVals)))
+        ax[1,1].set_title('Box and Whisker plot of node values | {} Clusters'.format(len(clusterVals)))
         ax[1,1].set_ylim(val_bounds)
         ax[1,1].set_xticks(range(len(boxwhis_data)+1))
         ax[1,1].set_xticklabels([' '] + list(sortedMean['index'].values))
@@ -309,6 +309,7 @@ class dbscan(clustAlg):
         distances = np.sort(distances, axis=0)
         plt.plot(list(range(len(distances))), distances[:,1])
         plt.title('DBSCAN Nearest Neighbor Plot\n' + description)
+        plt.grid(axis='y')
         plt.show()
 
 
