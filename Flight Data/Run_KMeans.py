@@ -23,12 +23,12 @@ data =DataUtil.MCTSData(dataDir)
 
 # %%  KMeans clustering
 rollLayer = data.getRolloutLayers(4, DataUtil.xg_cols + DataUtil.x_cols)
-treeLayer = data.getMCTSLayers(2, 4, DataUtil.xg_cols + DataUtil.x_cols)
+treeLayer = data.getMCTSLayers(9, 5, DataUtil.xg_cols + DataUtil.x_cols)
 
 kmeans = cl.kMeans(n_init=30)
-nCluster_range = list(range(2, 50))
+nCluster_range = list(range(2, 30))
 kmeans.runClustering(treeLayer, nCluster_range)
 
 
-# %% Plot results
-print(kmeans.computeClusterStats(1e5, val_bounds=[.2, 1]))
+# Plot results
+print(kmeans.computeClusterStats(1e5, val_bounds=[0, 1]))

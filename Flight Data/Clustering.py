@@ -161,6 +161,7 @@ class clustAlg:
     def computeClusterStats(self, omega, val_bounds=[0,1], std_bounds=[0,.3]):
         clusterValStats = pd.DataFrame(data=[], columns=['mean', 'median', 'std_dev'], index=self.clusters.keys())
 
+
         clusterVals = dict()
         for key, cluster in self.clusters.items():
             clusterVals[key] = DataUtil.computeNodeValues(cluster, self.dataObj.Xall, omega)
@@ -188,13 +189,18 @@ class clustAlg:
         ax[1,0].set_title('StdDev of {} Clusters'.format(len(clusterVals)))
         ax[1,0].set_ylim(std_bounds)
 
-        sortedMean = clusterValStats.sort_values(by=['mean'])
+        sortedMean = clusterValStats.sort_values(by=['median'])
         sortedMean.reset_index(inplace=True)
-        mean = sortedMean['mean'].values
-        std = sortedMean['std_dev'].values
-        ax[1,1].errorbar(sortedMean.index.values, mean, yerr=std, capsize=11, fmt='k.-', ecolor='m')
+        boxwhis_data = []
+        for clustIdx in sortedMean['index']:
+            boxwhis_data.append(clusterVals[clustIdx]['nodeValue'].values)
+
+
+        ax[1,1].boxplot(boxwhis_data, whis=(0,100))
         ax[1,1].set_title('Mean with StdDev error bars | {} Clusters'.format(len(clusterVals)))
         ax[1,1].set_ylim(val_bounds)
+        ax[1,1].set_xticks(range(len(boxwhis_data)+1))
+        ax[1,1].set_xticklabels([' '] + list(sortedMean['index'].values))
 
         plt.suptitle(self.name + self.hyper.description + '\n' + self.dataObj.getDescription())
         fig.show()
