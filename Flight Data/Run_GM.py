@@ -25,23 +25,10 @@ data =DataUtil.MCTSData(dataDir)
 rollLayer = data.getRolloutLayers(2, DataUtil.xg_cols + DataUtil.x_cols)
 treeLayer = data.getMCTSLayers(9, 5, DataUtil.xg_cols + DataUtil.x_cols)
 
-kmeans = cl.kMeans(n_init=30)
+gm = cl.gaussian(n_init=30)
 nCluster_range = list(range(2, 20))
-kmeans.runClustering(rollLayer, nCluster_range)
+gm.runClustering(rollLayer, nCluster_range)
 
 
-# %%Plot resul ts
-print(kmeans.computeClusterStats(1e5, val_bounds=[0, 1]))
-
-
-# %% PCA
-from sklearn.decomposition import PCA
-
-rollLayer = data.getRolloutLayers(2, DataUtil.xg_cols + DataUtil.x_cols)
-rollLayer.scaleData()
-
-pca = PCA(n_components=len(rollLayer.X.columns))
-X_pca = pca.fit_transform(rollLayer.X)
-
-plt.scatter(X_pca[:,0], X_pca[:,2])
-plt.show()
+# Plot results
+print(gm.computeClusterStats(1e5, val_bounds=[0, 1]))

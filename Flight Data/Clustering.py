@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.cluster import DBSCAN
 import pandas as pd
@@ -193,16 +194,20 @@ class clustAlg:
         sortedMean.reset_index(inplace=True)
         boxwhis_data = []
         for clustIdx in sortedMean['index']:
-            boxwhis_data.append(clusterVals[clustIdx]['nodeValue'].values)
+            boxwhis_data.append(np.array(list(clusterVals[clustIdx]['nodeValue'].values)))
 
 
-        ax[1,1].boxplot(boxwhis_data, whis=(0,100))
+        # ax[1,1].violinplot(boxwhis_data, showextrema=True, showmedians=True, quantiles=[.25, .75])
         ax[1,1].set_title('Box and Whisker plot of node values | {} Clusters'.format(len(clusterVals)))
         ax[1,1].set_ylim(val_bounds)
         ax[1,1].set_xticks(range(len(boxwhis_data)+1))
         ax[1,1].set_xticklabels([' '] + list(sortedMean['index'].values))
 
         plt.suptitle(self.name + self.hyper.description + '\n' + self.dataObj.getDescription())
+        fig.show()
+
+        fig = plt.figure()
+        sns.violinplot(data=boxwhis_data)
         fig.show()
         return clusterValStats
 
@@ -379,6 +384,7 @@ class gaussian(clustAlg):
 
             bic.loc[n_clusters] = gauss.bic(X)
             aic.loc[n_clusters] = gauss.aic(X)
+            print('Ran metrics for {} clusters'.format(n_clusters))
 
 
 
@@ -386,9 +392,11 @@ class gaussian(clustAlg):
         fig.set_size_inches(18, 12)
         plt.suptitle(description)
         ax1.set_title('BIC vs. number of clusters')
-        ax1.plot(cluster_range, bic)
+        ax1.plot(hp_range, bic)
+        ax1.grid(axis='x')
         ax2.set_title('AIC vs number of clusters')
-        ax2.plot(cluster_range, aic, '.-')
+        ax2.plot(hp_range, aic, '.-')
+        ax2.grid(axis='x')
         fig.show()
 
 
